@@ -10,12 +10,6 @@ const inviteLinks = new Map()
 const inviteCount = new Map()
 let dataMessageId = null
 
-const PRIZES = {
-  1: "$50,000 Instant or 2-Step Account - Your choice",
-  2: "$10,000 Instant or 2-Step Account",
-  3: "$5,000 Instant or 2-Step Account"
-}
-
 const TARGET = 1000
 
 async function saveData() {
@@ -79,29 +73,29 @@ bot.onText(/\/start/, async (msg) => {
 
   const text =
     "TF8 - Invitation Contest\n\n" +
-    "WELCOME TO THE TF8 INVITATION CONTEST !\n\n" +
-    "You're in ! Now it's time to bring your network to The Floor 8\n\n" +
+    "🎉 WELCOME TO THE TF8 INVITATION CONTEST !\n\n" +
+    "You're in ! Now it's time to bring your network to The Floor 8 🚀\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "YOUR PERSONAL INVITE LINK :\n" +
+    "🔗 YOUR PERSONAL INVITE LINK :\n" +
     (link || "Type /mylink to get your link") + "\n\n" +
-    "Share this link - every person who joins through it counts as your invite.\n\n" +
+    "Share this link, every person who joins through it counts as your invite.\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "HOW IT WORKS :\n" +
+    "🎯 HOW IT WORKS :\n" +
     "1. Share your link\n" +
     "2. Each friend who joins = +1 invitation\n" +
-    "3. The more you invite, the higher you climb\n\n" +
+    "3. The more you invite, the higher you climb 🏆\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "PRIZES :\n" +
-    "1st place : " + PRIZES[1] + "\n" +
-    "2nd place : " + PRIZES[2] + "\n" +
-    "3rd place : " + PRIZES[3] + "\n\n" +
-    "Contest ends when the group reaches " + TARGET + " members\n\n" +
+    "🏆 PRIZES :\n" +
+    "🥇 1st place : $50,000 Instant or 2-Step Account - Your choice\n" +
+    "🥈 2nd place : $10,000 Instant or 2-Step Account\n" +
+    "🥉 3rd place : $5,000 Instant or 2-Step Account\n\n" +
+    "Contest ends when the group reaches " + TARGET + " members 👀\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "COMMANDS :\n" +
+    "📊 COMMANDS :\n" +
     "/mylink - Your unique invitation link\n" +
     "/mystats - Your invitations and current rank\n" +
     "/leaderboard - Top 10 leaderboard\n\n" +
-    "Start sharing now !"
+    "Start sharing now ! 🚀"
 
   bot.sendMessage(msg.chat.id, text)
 })
@@ -115,12 +109,12 @@ bot.onText(/\/mylink/, async (msg) => {
 
   const text =
     "TF8 - Invitation Contest\n\n" +
-    "YOUR PERSONAL INVITE LINK :\n" +
+    "🔗 YOUR PERSONAL INVITE LINK :\n" +
     (link || "Error generating link") + "\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "Your invitations : " + count + "\n" +
-    "Current rank : #" + (rank || "?") + "\n\n" +
-    "Share your link and climb the leaderboard !"
+    "📊 Your invitations : " + count + "\n" +
+    "🏅 Current rank : #" + (rank || "?") + "\n\n" +
+    "Share your link and climb the leaderboard ! 🚀"
 
   bot.sendMessage(msg.chat.id, text)
 })
@@ -130,21 +124,19 @@ bot.onText(/\/mystats/, (msg) => {
   const data = inviteCount.get(userId)
   const count = data ? data.count : 0
   const rank = getRank(userId)
-  const prize = PRIZES[rank] || null
 
   let text =
     "TF8 - Invitation Contest\n\n" +
-    "YOUR STATS :\n\n" +
-    "Invitations : " + count + "\n" +
-    "Current rank : #" + (rank || "?") + "\n"
+    "📊 YOUR STATS :\n\n" +
+    "👥 Invitations : " + count + "\n" +
+    "🏅 Current rank : #" + (rank || "?") + "\n"
 
-  if (rank && rank <= 3) {
-    text += "\nCurrent prize : " + prize
-  } else {
-    text += "\nKeep going - top 3 wins a funded account !"
-  }
+  if (rank === 1) text += "\n🎁 Current prize : $50,000 Instant or 2-Step Account - Your choice"
+  else if (rank === 2) text += "\n🎁 Current prize : $10,000 Instant or 2-Step Account"
+  else if (rank === 3) text += "\n🎁 Current prize : $5,000 Instant or 2-Step Account"
+  else text += "\n🎯 Keep going - top 3 wins a funded account !"
 
-  text += "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to share your link"
+  text += "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to share your link 🔗"
 
   bot.sendMessage(msg.chat.id, text)
 })
@@ -155,15 +147,15 @@ bot.onText(/\/leaderboard/, (msg) => {
     .slice(0, 10)
 
   if (top.length === 0) {
-    return bot.sendMessage(msg.chat.id, "No invitations yet. Be the first !")
+    return bot.sendMessage(msg.chat.id, "No invitations yet. Be the first ! 🚀")
   }
 
-  const medals = ["1st", "2nd", "3rd"]
+  const medals = ["🥇", "🥈", "🥉"]
 
   let text =
     "TF8 - Invitation Contest\n\n" +
-    "TOP 10 LEADERBOARD\n\n" +
-    "Contest ends at " + TARGET + " members\n\n" +
+    "🏆 TOP 10 LEADERBOARD\n\n" +
+    "🎯 Contest ends at " + TARGET + " members\n\n" +
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
   top.forEach(([id, data], i) => {
@@ -171,7 +163,7 @@ bot.onText(/\/leaderboard/, (msg) => {
     text += rank + " @" + data.username + " : " + data.count + " invitation" + (data.count > 1 ? "s" : "") + "\n"
   })
 
-  text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to get your unique link"
+  text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to get your unique link 🔗"
 
   bot.sendMessage(msg.chat.id, text)
 })
@@ -195,8 +187,8 @@ bot.on("new_chat_members", async (msg) => {
       const rank = getRank(userId)
 
       bot.sendMessage(GROUP_ID,
-        newMembers.map(m => m.first_name).join(", ") + " joined via @" + data.username + "'s link !\n" +
-        "@" + data.username + " : " + newCount + " invitation" + (newCount > 1 ? "s" : "") + " | Rank : #" + (rank || "?")
+        "📨 " + newMembers.map(m => m.first_name).join(", ") + " joined via @" + data.username + "'s link !\n" +
+        "📊 @" + data.username + " : " + newCount + " invitation" + (newCount > 1 ? "s" : "") + " | Rank : #" + (rank || "?")
       )
       break
     }
