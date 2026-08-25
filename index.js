@@ -10,16 +10,12 @@ const inviteCount = new Map()
 let dataMessageId = null
 
 const PRIZES = {
-  1: "$50,000 Instant or 2-Step Account — Your choice 🏆",
-  2: "$10,000 Instant or 2-Step Account 🥈",
-  3: "$5,000 Instant or 2-Step Account 🥉"
+  1: "$50,000 Instant or 2-Step Account — Your choice",
+  2: "$10,000 Instant or 2-Step Account",
+  3: "$5,000 Instant or 2-Step Account"
 }
 
 const TARGET = 1000
-
-// ─────────────────────────────────────────
-// SAUVEGARDE
-// ─────────────────────────────────────────
 
 async function saveData() {
   try {
@@ -37,116 +33,163 @@ async function saveData() {
       dataMessageId = msg.message_id
     }
   } catch (e) {
-    console.error("Erreur sauvegarde:", e.message)
+    console.error("Save error:", e.message)
   }
 }
 
-// ─────────────────────────────────────────
-// /start — Message de bienvenue
-// ─────────────────────────────────────────
+function getRank(userId) {
+  const sorted = [...inviteCount.entries()].sort((a, b) => b[1].count - a[1].count)
+  const rank = sorted.findIndex(([id]) => id === userId) + 1
+  return rank || null
+}
 
 bot.onText(/\/start/, async (msg) => {
   const userId = msg.from.id
   const username = msg.from.username || msg.from.first_name
 
-  const welcomeText = `
-👋 Welcome to The Floor 8 Invitation Contest !
+  let link = null
 
-🏆 *PRIZES TO WIN*
-🥇 1st place → ${PRIZES[1]}
-🥈 2nd place → ${PRIZES[2]}
-🥉 3rd place → ${PRIZES[3]}
+  if (inviteLinks.has(userId)) {
+    link = inviteLinks.get(userId).link
+  } else {
+    try {
+      const invite = await bot.createChatInviteLink(GROUP_ID, {
+        name: `Invite de ${username}`,
+        creates_join_request: false,
+        member_limit: 999
+      })
+      link = invite.invite_link
+      inviteLinks.set(userId, {
+        link,
+        username,
+        inviteCode: link.split("/").pop()
+      })
+      inviteCount.set(userId, { count: 0, username })
+      await saveData()
+    } catch (e) {
+      console.error("Link error:", e.message)
+    }
+  }
 
-🎯 *HOW IT WORKS*
-Invite as many people as possible to the group using your unique link. The top 3 inviters when we reach *${TARGET} members* win their prize.
+  const text = `
+TF8 - Invitation Contest
 
-📋 *COMMANDS*
-/monlien — Get your unique invitation link
-/mesinfos — See your stats and current rank
-/classement — Top 10 leaderboard
+🎉 WELCOME TO THE TF8 INVITATION CONTEST !
 
-Let's go 🚀
+You're in ! Now it's time to bring your network to The Floor 8 🚀
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔗 YOUR PERSONAL INVITE LINK :
+${link || "Type /mylink to get your link"}
+
+Share this link — every person who joins through it counts as your invite.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 HOW IT WORKS :
+1. Share your link
+2. Each friend who joins = +1 invitation
+3. The more you invite, the higher you climb 🏆
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🏆 PRIZES :
+🥇 1st place : ${PRIZES[1]}
+🥈 2nd place : ${PRIZES[2]}
+🥉 3rd place : ${PRIZES[3]}
+
+Contest ends when the group reaches ${TARGET} members 👀
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 COMMANDS :
+/mylink - Your unique invitation link
+/mystats - Your invitations and current rank
+/leaderboard - Top 10 leaderboard
+
+Start sharing now ! 🚀
 `
 
-  bot.sendMessage(msg.chat.id, welcomeText, { parse_mode: "Markdown" })
+  bot.sendMessage(msg.chat.id, text)
 })
 
-// ─────────────────────────────────────────
-// /monlien — Lien d'invitation unique
-// ─────────────────────────────────────────
-
-bot.onText(/\/monlien/, async (msg) => {
+bot.onText(/\/mylink/, async (msg) => {
   const userId = msg.from.id
   const username = msg.from.username || msg.from.first_name
 
+  let link = null
+
   if (inviteLinks.has(userId)) {
-    const existing = inviteLinks.get(userId)
-    const count = inviteCount.get(userId)?.count || 0
-    const rank = getRank(userId)
-    return bot.sendMessage(msg.chat.id,
-      `🔗 *Your invitation link :*\n${existing.link}\n\n📊 Invitations : *${count}*\n🏅 Current rank : *#${rank || "?"}*\n\nShare it and climb the leaderboard ! 🚀`,
-      { parse_mode: "Markdown" }
-    )
-  }
-
-  try {
-    const invite = await bot.createChatInviteLink(GROUP_ID, {
-      name: `Invite de ${username}`,
-      creates_join_request: false,
-      member_limit: 999
-    })
-
-    inviteLinks.set(userId, {
-      link: invite.invite_link,
-      username,
-      inviteCode: invite.invite_link.split("/").pop()
-    })
-
-    if (!inviteCount.has(userId)) {
+    link = inviteLinks.get(userId).link
+  } else {
+    try {
+      const invite = await bot.createChatInviteLink(GROUP_ID, {
+        name: `Invite de ${username}`,
+        creates_join_request: false,
+        member_limit: 999
+      })
+      link = invite.invite_link
+      inviteLinks.set(userId, {
+        link,
+        username,
+        inviteCode: link.split("/").pop()
+      })
       inviteCount.set(userId, { count: 0, username })
+      await saveData()
+    } catch (e) {
+      console.error("Link error:", e.message)
     }
-
-    await saveData()
-
-    bot.sendMessage(msg.chat.id,
-      `🔗 *Your unique invitation link :*\n${invite.invite_link}\n\nShare it to climb the leaderboard and win your prize 🏆`,
-      { parse_mode: "Markdown" }
-    )
-  } catch (e) {
-    console.error("Erreur création lien:", e.message)
-    bot.sendMessage(msg.chat.id, "❌ Error creating your link. Please try again.")
   }
+
+  const count = inviteCount.get(userId)?.count || 0
+  const rank = getRank(userId)
+
+  const text = `
+TF8 - Invitation Contest
+
+🔗 YOUR PERSONAL INVITE LINK :
+${link}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 Your invitations : ${count}
+🏅 Current rank : #${rank || "?"}
+
+Share your link and climb the leaderboard 🚀
+`
+
+  bot.sendMessage(msg.chat.id, text)
 })
 
-// ─────────────────────────────────────────
-// /mesinfos — Stats personnelles
-// ─────────────────────────────────────────
-
-bot.onText(/\/mesinfos/, (msg) => {
+bot.onText(/\/mystats/, (msg) => {
   const userId = msg.from.id
   const data = inviteCount.get(userId)
   const count = data ? data.count : 0
   const rank = getRank(userId)
-  const prize = PRIZES[rank] || "Keep inviting to win a prize !"
+  const prize = PRIZES[rank] || null
 
-  let text = `📊 *Your stats :*\n\n`
-  text += `👥 Invitations : *${count}*\n`
-  text += `🏅 Current rank : *#${rank || "?"}*\n`
+  let text = `
+TF8 - Invitation Contest
+
+📊 YOUR STATS :
+
+👥 Invitations : ${count}
+🏅 Current rank : #${rank || "?"}
+`
 
   if (rank && rank <= 3) {
-    text += `\n🎁 *Current prize :* ${prize}`
+    text += `\n🎁 Current prize : ${prize}`
   } else {
-    text += `\n🎯 Keep going — top 3 wins a prize !`
+    text += `\n🎯 Keep going — top 3 wins a funded account !`
   }
 
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" })
+  text += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to share your link 🔗`
+
+  bot.sendMessage(msg.chat.id, text)
 })
 
-// ─────────────────────────────────────────
-// /classement — Top 10
-// ─────────────────────────────────────────
-
-bot.onText(/\/classement/, (msg) => {
+bot.onText(/\/leaderboard/, (msg) => {
   const top = [...inviteCount.entries()]
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 10)
@@ -156,23 +199,19 @@ bot.onText(/\/classement/, (msg) => {
   }
 
   const medals = ["🥇", "🥈", "🥉"]
-  let text = `🏆 *INVITATION CONTEST — TOP 10*\n\n`
-  text += `🎯 Contest ends at *${TARGET} members*\n\n`
+
+  let text = `TF8 - Invitation Contest\n\n🏆 TOP 10 LEADERBOARD\n\n🎯 Contest ends at ${TARGET} members\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`
 
   top.forEach(([id, data], i) => {
     const rank = medals[i] || `${i + 1}.`
-    const prize = PRIZES[i + 1] ? `— ${PRIZES[i + 1].split("—")[0].trim()}` : ""
-    text += `${rank} @${data.username} : *${data.count} invitation${data.count > 1 ? "s" : ""}* ${prize}\n`
+    const prize = PRIZES[i + 1] ? `${PRIZES[i + 1].split(" ")[0]} ${PRIZES[i + 1].split(" ")[1]}` : ""
+    text += `${rank} @${data.username} : ${data.count} invitation${data.count > 1 ? "s" : ""} ${prize ? `| ${prize}` : ""}\n`
   })
 
-  text += `\n/monlien to get your unique link 🔗`
+  text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to get your unique link 🔗`
 
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" })
+  bot.sendMessage(msg.chat.id, text)
 })
-
-// ─────────────────────────────────────────
-// DÉTECTION NOUVEAUX MEMBRES
-// ─────────────────────────────────────────
 
 bot.on("new_chat_members", async (msg) => {
   const newMembers = msg.new_chat_members
@@ -193,26 +232,11 @@ bot.on("new_chat_members", async (msg) => {
       const rank = getRank(userId)
 
       bot.sendMessage(GROUP_ID,
-        `📨 *${newMembers.map(m => m.first_name).join(", ")}* joined via *@${data.username}*'s link !\n📊 @${data.username} : *${newCount} invitation${newCount > 1 ? "s" : ""}* | Rank : *#${rank || "?"}*`,
-        { parse_mode: "Markdown" }
+        `📨 ${newMembers.map(m => m.first_name).join(", ")} joined via @${data.username}'s link !\n📊 @${data.username} : ${newCount} invitation${newCount > 1 ? "s" : ""} | Rank : #${rank || "?"}`
       )
       break
     }
   }
 })
 
-// ─────────────────────────────────────────
-// UTILS
-// ─────────────────────────────────────────
-
-function getRank(userId) {
-  const sorted = [...inviteCount.entries()].sort((a, b) => b[1].count - a[1].count)
-  const rank = sorted.findIndex(([id]) => id === userId) + 1
-  return rank || null
-}
-
-// ─────────────────────────────────────────
-// DÉMARRAGE
-// ─────────────────────────────────────────
-
-console.log("Bot TF8 Invitations Telegram démarré !")
+console.log("TF8 Invitation Bot started !")
