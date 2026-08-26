@@ -1,198 +1,237 @@
-const TelegramBot = require("node-telegram-bot-api")
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js')
+const questions = require('./questions')
 
 const TOKEN = process.env.TOKEN
-const GROUP_ID = process.env.GROUP_ID
-const SAVE_CHANNEL_ID = process.env.SAVE_CHANNEL_ID
+const CLIENT_ID = process.env.CLIENT_ID
+const GUILD_ID = process.env.GUILD_ID
+const QUIZ_CHANNEL_ID = process.env.QUIZ_CHANNEL_ID
+const SCORES_CHANNEL_ID = process.env.SCORES_CHANNEL_ID
 
-const bot = new TelegramBot(TOKEN, { polling: true })
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds]
+})
 
-const inviteLinks = new Map()
-const inviteCount = new Map()
-let dataMessageId = null
+let quizRunning = false
+const hasParticipated = new Set()
+let globalScores = {}
+let scoresMessageId = null
 
-const TARGET = 1000
-
-async function saveData() {
+async function loadScores() {
   try {
-    const data = JSON.stringify({
-      inviteLinks: Object.fromEntries(inviteLinks),
-      inviteCount: Object.fromEntries(inviteCount)
-    })
-    if (dataMessageId) {
-      await bot.editMessageText("TFDATA:" + data, {
-        chat_id: SAVE_CHANNEL_ID,
-        message_id: dataMessageId
-      })
+    const channel = await client.channels.fetch(SCORES_CHANNEL_ID)
+    const messages = await channel.messages.fetch({ limit: 10 })
+    const scoresMsg = messages.find(m => m.author.id === client.user.id && m.content.startsWith('SCORES:'))
+    if (scoresMsg) {
+      globalScores = JSON.parse(scoresMsg.content.replace('SCORES:', ''))
+      scoresMessageId = scoresMsg.id
+      console.log('Scores chargés')
+    }
+  } catch (e) {
+    console.log('Pas de scores existants:', e.message)
+  }
+}
+
+async function saveScores() {
+  try {
+    const channel = await client.channels.fetch(SCORES_CHANNEL_ID)
+    const content = 'SCORES:' + JSON.stringify(globalScores)
+    if (scoresMessageId) {
+      const msg = await channel.messages.fetch(scoresMessageId)
+      await msg.edit(content)
     } else {
-      const msg = await bot.sendMessage(SAVE_CHANNEL_ID, "TFDATA:" + data)
-      dataMessageId = msg.message_id
+      const msg = await channel.send(content)
+      scoresMessageId = msg.id
     }
   } catch (e) {
-    console.error("Save error:", e.message)
+    console.error('Erreur sauvegarde scores:', e.message)
   }
 }
 
-function getRank(userId) {
-  const sorted = [...inviteCount.entries()].sort((a, b) => b[1].count - a[1].count)
-  const rank = sorted.findIndex(([id]) => id === userId) + 1
-  return rank || null
-}
+async function sendQuizToMember(interaction) {
+  const userId = interaction.user.id
+  const username = interaction.user.username
 
-async function getOrCreateLink(userId, username) {
-  if (inviteLinks.has(userId)) {
-    return inviteLinks.get(userId).link
+  if (!globalScores[userId]) {
+    globalScores[userId] = { username, score: 0, correct: 0, wrong: 0, quizzesPlayed: 0 }
   }
 
-  try {
-    const invite = await bot.createChatInviteLink(GROUP_ID, {
-      name: "Invite de " + username,
-      creates_join_request: false,
-      member_limit: 999
+  let quizScore = 0
+  let correct = 0
+  let wrong = 0
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i]
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`q${i}_A_${userId}`).setLabel('A').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`q${i}_B_${userId}`).setLabel('B').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`q${i}_C_${userId}`).setLabel('C').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`q${i}_D_${userId}`).setLabel('D').setStyle(ButtonStyle.Primary),
+    )
+
+    await interaction.followUp({
+      embeds: [new EmbedBuilder()
+        .setTitle(`🎯 Question ${i + 1} / ${questions.length}`)
+        .setDescription(q.question + '\n\n' + q.choices.join('\n'))
+        .setColor('#FF4655')
+        .setFooter({ text: '⏱️ 10 secondes pour répondre !' })],
+      components: [row],
+      ephemeral: true
     })
 
-    inviteLinks.set(userId, {
-      link: invite.invite_link,
-      username,
-      inviteCode: invite.invite_link.split("/").pop()
+    const startTime = Date.now()
+    let feedback = ''
+
+    await new Promise(resolve => {
+      const filter = i2 => i2.customId.startsWith(`q${i}_`) && i2.customId.endsWith(`_${userId}`) && i2.user.id === userId
+      const collector = interaction.channel.createMessageComponentCollector({ filter, time: 10000, max: 1 })
+
+      collector.on('collect', async i2 => {
+        const choice = i2.customId.split('_')[1]
+        const speed = Math.max(0, Math.round((10000 - (Date.now() - startTime)) / 1000))
+
+        if (choice === q.answer) {
+          const pts = 10 + speed
+          quizScore += pts
+          correct++
+          feedback = `✅ Bonne réponse ! +${pts} pts (dont +${speed} pts rapidité)`
+        } else {
+          wrong++
+          feedback = `❌ Mauvaise réponse ! La bonne réponse était ${q.answer} : ${q.choices.find(c => c.startsWith(q.answer))}`
+        }
+
+        await i2.deferUpdate()
+        collector.stop()
+      })
+
+      collector.on('end', async collected => {
+        if (collected.size === 0) {
+          wrong++
+          feedback = `⏱️ Temps écoulé ! La bonne réponse était ${q.answer} : ${q.choices.find(c => c.startsWith(q.answer))}`
+        }
+        await interaction.followUp({ content: feedback, ephemeral: true })
+        setTimeout(resolve, 2000)
+      })
     })
-
-    inviteCount.set(userId, { count: 0, username })
-    await saveData()
-
-    return invite.invite_link
-  } catch (e) {
-    console.error("Link error:", e.message)
-    return null
-  }
-}
-
-bot.onText(/\/start/, async (msg) => {
-  const userId = msg.from.id
-  const username = msg.from.username || msg.from.first_name
-  const link = await getOrCreateLink(userId, username)
-
-  const text =
-    "TF8 - Invitation Contest\n\n" +
-    "🎉 WELCOME TO THE TF8 INVITATION CONTEST !\n\n" +
-    "You're in ! Now it's time to bring your network to The Floor 8 🚀\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "🔗 YOUR PERSONAL INVITE LINK :\n" +
-    (link || "Type /mylink to get your link") + "\n\n" +
-    "Share this link, every person who joins through it counts as your invite.\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "🎯 HOW IT WORKS :\n" +
-    "1. Share your link\n" +
-    "2. Each friend who joins = +1 invitation\n" +
-    "3. The more you invite, the higher you climb 🏆\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "🏆 PRIZES :\n" +
-    "🥇 1st place : $50,000 Instant or 2-Step Account - Your choice\n" +
-    "🥈 2nd place : $10,000 Instant or 2-Step Account\n" +
-    "🥉 3rd place : $5,000 Instant or 2-Step Account\n\n" +
-    "Contest ends when the group reaches " + TARGET + " members 👀\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "📊 COMMANDS :\n" +
-    "/mylink - Your unique invitation link\n" +
-    "/mystats - Your invitations and current rank\n" +
-    "/leaderboard - Top 10 leaderboard\n\n" +
-    "Start sharing now ! 🚀"
-
-  bot.sendMessage(msg.chat.id, text)
-})
-
-bot.onText(/\/mylink/, async (msg) => {
-  const userId = msg.from.id
-  const username = msg.from.username || msg.from.first_name
-  const link = await getOrCreateLink(userId, username)
-  const count = inviteCount.get(userId)?.count || 0
-  const rank = getRank(userId)
-
-  const text =
-    "TF8 - Invitation Contest\n\n" +
-    "🔗 YOUR PERSONAL INVITE LINK :\n" +
-    (link || "Error generating link") + "\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "📊 Your invitations : " + count + "\n" +
-    "🏅 Current rank : #" + (rank || "?") + "\n\n" +
-    "Share your link and climb the leaderboard ! 🚀"
-
-  bot.sendMessage(msg.chat.id, text)
-})
-
-bot.onText(/\/mystats/, (msg) => {
-  const userId = msg.from.id
-  const data = inviteCount.get(userId)
-  const count = data ? data.count : 0
-  const rank = getRank(userId)
-
-  let text =
-    "TF8 - Invitation Contest\n\n" +
-    "📊 YOUR STATS :\n\n" +
-    "👥 Invitations : " + count + "\n" +
-    "🏅 Current rank : #" + (rank || "?") + "\n"
-
-  if (rank === 1) text += "\n🎁 Current prize : $50,000 Instant or 2-Step Account - Your choice"
-  else if (rank === 2) text += "\n🎁 Current prize : $10,000 Instant or 2-Step Account"
-  else if (rank === 3) text += "\n🎁 Current prize : $5,000 Instant or 2-Step Account"
-  else text += "\n🎯 Keep going - top 3 wins a funded account !"
-
-  text += "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to share your link 🔗"
-
-  bot.sendMessage(msg.chat.id, text)
-})
-
-bot.onText(/\/leaderboard/, (msg) => {
-  const top = [...inviteCount.entries()]
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 10)
-
-  if (top.length === 0) {
-    return bot.sendMessage(msg.chat.id, "No invitations yet. Be the first ! 🚀")
   }
 
-  const medals = ["🥇", "🥈", "🥉"]
+  globalScores[userId].score += quizScore
+  globalScores[userId].correct += correct
+  globalScores[userId].wrong += wrong
+  globalScores[userId].quizzesPlayed += 1
+  globalScores[userId].username = username
+  await saveScores()
 
-  let text =
-    "TF8 - Invitation Contest\n\n" +
-    "🏆 TOP 10 LEADERBOARD\n\n" +
-    "🎯 Contest ends at " + TARGET + " members\n\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-  top.forEach(([id, data], i) => {
-    const rank = medals[i] || (i + 1) + "."
-    text += rank + " @" + data.username + " : " + data.count + " invitation" + (data.count > 1 ? "s" : "") + "\n"
+  await interaction.followUp({
+    embeds: [new EmbedBuilder()
+      .setTitle('🏁 Quiz terminé !')
+      .setDescription(`Score de ce quiz : **${quizScore} pts**\n✅ Bonnes réponses : ${correct}\n❌ Mauvaises réponses : ${wrong}\n\nReviens bientôt pour un nouveau quiz !`)
+      .setColor('#FF4655')],
+    ephemeral: true
   })
+}
 
-  text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n/mylink to get your unique link 🔗"
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('quiz')
+      .setDescription('Lance le quiz Valorant'),
+    new SlashCommandBuilder()
+      .setName('classement')
+      .setDescription('Affiche le classement général'),
+    new SlashCommandBuilder()
+      .setName('endquiz')
+      .setDescription('Arrête le quiz en cours'),
+  ].map(c => c.toJSON())
 
-  bot.sendMessage(msg.chat.id, text)
+  const rest = new REST({ version: '10' }).setToken(TOKEN)
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] })
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands })
+  console.log('Commandes enregistrées')
+}
+
+client.on('ready', async () => {
+  console.log(`Bot connecté : ${client.user.tag}`)
+  await registerCommands()
+  await loadScores()
 })
 
-bot.on("new_chat_members", async (msg) => {
-  const newMembers = msg.new_chat_members
-  const inviteLink = msg.invite_link
+client.on('interactionCreate', async interaction => {
 
-  if (!inviteLink) return
+  if (interaction.isChatInputCommand()) {
 
-  const inviteCode = inviteLink.invite_link?.split("/").pop()
+    if (interaction.commandName === 'quiz') {
+      if (quizRunning) {
+        return interaction.reply({ content: '⚠️ Un quiz est déjà en cours ! Utilise /endquiz pour l\'arrêter.', ephemeral: true })
+      }
 
-  for (const [userId, data] of inviteLinks.entries()) {
-    if (data.inviteCode === inviteCode) {
-      const current = inviteCount.get(userId) || { count: 0, username: data.username }
-      const newCount = current.count + newMembers.length
-      inviteCount.set(userId, { count: newCount, username: data.username })
+      quizRunning = true
+      hasParticipated.clear()
 
-      await saveData()
+      const channel = await client.channels.fetch(QUIZ_CHANNEL_ID)
 
-      const rank = getRank(userId)
-
-      bot.sendMessage(GROUP_ID,
-        "📨 " + newMembers.map(m => m.first_name).join(", ") + " joined via @" + data.username + "'s link !\n" +
-        "📊 @" + data.username + " : " + newCount + " invitation" + (newCount > 1 ? "s" : "") + " | Rank : #" + (rank || "?")
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId('start_quiz')
+          .setLabel('🎯 Commencer le quiz Valorant')
+          .setStyle(ButtonStyle.Danger)
       )
-      break
+
+      await channel.send({
+        embeds: [new EmbedBuilder()
+          .setTitle('🎯 QUIZ VALORANT — VALORANT WEEK')
+          .setDescription('Le quiz Valorant est disponible !\n\n🔒 Les questions sont privées — personne ne voit tes réponses.\n\nClique sur le bouton ci-dessous pour commencer 👇\n\n⏱️ Tu as 10 secondes par question.')
+          .setColor('#FF4655')
+          .setFooter({ text: 'Valorant Week — Shortcut' })],
+        components: [row]
+      })
+
+      await interaction.reply({ content: '✅ Quiz lancé !', ephemeral: true })
+
+      const filter = i => i.customId === 'start_quiz'
+      const collector = channel.createMessageComponentCollector({ filter })
+
+      collector.on('collect', async i => {
+        const userId = i.user.id
+
+        if (hasParticipated.has(userId)) {
+          return i.reply({ content: '❌ Tu as déjà participé au quiz ! Reviens la prochaine fois.', ephemeral: true })
+        }
+
+        hasParticipated.add(userId)
+        await i.reply({ content: '🎯 Le quiz commence ! Les questions arrivent...', ephemeral: true })
+        sendQuizToMember(i)
+      })
+    }
+
+    if (interaction.commandName === 'classement') {
+      const top = Object.entries(globalScores)
+        .sort((a, b) => b[1].score - a[1].score)
+        .slice(0, 20)
+
+      const medals = ['🥇', '🥈', '🥉']
+      const classement = top.length
+        ? top.map(([id, data], i) => {
+            const rank = medals[i] || (i + 1) + '.'
+            return `${rank} **${data.username}** : ${data.score} pts (${data.quizzesPlayed} quiz joués)`
+          }).join('\n')
+        : 'Aucun participant pour le moment.'
+
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setTitle('🎯 CLASSEMENT QUIZ VALORANT')
+          .setDescription(classement)
+          .setColor('#FF4655')],
+        ephemeral: false
+      })
+    }
+
+    if (interaction.commandName === 'endquiz') {
+      quizRunning = false
+      hasParticipated.clear()
+      await interaction.reply({ content: '✅ Quiz arrêté. Tu peux en relancer un nouveau avec /quiz.', ephemeral: true })
     }
   }
 })
 
-console.log("TF8 Invitation Bot started !")
+client.login(TOKEN)
