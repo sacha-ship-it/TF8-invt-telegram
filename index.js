@@ -179,10 +179,10 @@ client.on('interactionCreate', async interaction => {
 
       await channel.send({
         embeds: [new EmbedBuilder()
-          .setTitle('🎯 QUIZ VALORANT — VALORANT WEEK')
-          .setDescription('Le quiz Valorant est disponible !\n\n🔒 Les questions sont privées — personne ne voit tes réponses.\n\nClique sur le bouton ci-dessous pour commencer 👇\n\n⏱️ Tu as 10 secondes par question.')
+          .setTitle('🎯 QUIZ VALORANT - VALORANT WEEK')
+          .setDescription('Le quiz Valorant est disponible !\n\n🔒 Les questions sont privées, personne ne voit tes réponses.\n\nClique sur le bouton ci-dessous pour commencer 👇\n\n⏱️ Tu as 10 secondes par question.')
           .setColor('#FF4655')
-          .setFooter({ text: 'Valorant Week — Shortcut' })],
+          .setFooter({ text: 'Valorant Week - Shortcut' })],
         components: [row]
       })
 
